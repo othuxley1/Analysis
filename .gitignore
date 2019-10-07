@@ -122,3 +122,15 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+data/mysql_defaults/
+
+*.csv
+
+*.pickle
+
+*.ini
+
+.idea/
+
+.vscode/
