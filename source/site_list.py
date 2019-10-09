@@ -14,6 +14,7 @@ as defined by the national PV site list.
 import pandas as pd
 import time as TIME
 from pv_system import PVSystem
+from site_list_exceptions import DecommissionedError
 
 class SiteListVariation:
     """
@@ -134,10 +135,14 @@ class SiteListVariation:
                 # simulate revised up
                 pvs.revised_up()
                 # simulate revised down
+                pvs.revised_down()
                 # simulate network_outage
+
                 # simulate site_uncertainty
+                pvs.site_uncertainty()
                 # simulate string_outage
-            except DecomissionedError:
+                pvs.string_outage()
+            except DecommissionedError:
                 pass
 
                 # site has been decmmoissioned, do nothing
