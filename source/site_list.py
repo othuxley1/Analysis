@@ -124,10 +124,26 @@ class SiteListVariation:
         for site in site_list.itertuples():
             # TODO
             #   error handling for getattr()
-            # instantiate pvsystem class
-            pvs = PVSystem(site, self)
-            pvs.decommissioned()
-            # import pdb; pdb.set_trace()
+            try:
+                # instantiate pvsystem class
+                pvs = PVSystem(site, self)
+                # simulate decomissioned systems
+                pvs.decommissioned()
+                # simulate offline systems
+                pvs.offline()
+                # simulate revised up
+                pvs.revised_up()
+                # simulate revised down
+                # simulate network_outage
+                # simulate site_uncertainty
+                # simulate string_outage
+            except DecomissionedError:
+                pass
+
+                # site has been decmmoissioned, do nothing
+                pass
+
+
         print("Time taken for itertuples(): {}".format(TIME.time() - tstart))
 
 
