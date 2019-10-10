@@ -14,6 +14,7 @@ class PVSystem:
         self.northings = getattr(site_tuple, "Northings")
         self.system_type = getattr(site_tuple, "system_type")
         self.SL_instance = SL_instance
+        import pdb; pdb.set_trace()
         # self.start = datetime.date
 
     def decommissioned(self):
@@ -66,7 +67,7 @@ class PVSystem:
                 normal = 1
             up_rating = 1 + normal
             self.capacity  *= up_rating
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
 
     def revised_down(self):
         self.error_type = "revised_down"
@@ -85,17 +86,52 @@ class PVSystem:
                 de_rating = 0
             self.capacity *= de_rating
         import pdb;
-        pdb.set_trace()
+        # pdb.set_trace()
 
     def site_uncertainty(self):
         self.error_type = "site_uncertainty"
-        if self.system_type == "non_domestic":
+        if self.system_type == "non-domestic":
             error = np.random.normal(0.95, 0.1)
         elif self.system_type == "domestic":
             error = np.random.normal(1, 0.15)
+        else:
+            raise ValueError("Unrecognised string '{}' in system_type field.".format(self.system_type))
         self.capacity *= error
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
 
     def string_outage(self):
-        
-    def pvsystem_list(self):
+        self.error_type = "string_outage"
+
+        if self.system_type == "domestic":
+            prob_invtr_fail = np.random.normal(0.02, 0.06)
+            prob_invtr_fail = prob_invtr_fail if (prob_invtr_fail > 0) else 0
+            random_number = random.uniform(0, 1)
+            if random_number < prob_invtr_fail:
+                # inverter has failed
+                fail_time = np.random.normal(14, 7) # length of failure in days
+                fail_time = fail_time if fail_time > 0 else 0
+                self.capacity *= (fail_time/365)
+
+        elif self.system_type == "non-domestic":
+            prob_invtr_fail = np.random.normal(0.01, 0.03)
+            prob_invtr_fail = prob_invtr_fail if prob_invtr_fail > 0 else 0
+            random_number = random.uniform(0, 1)
+            if random_number < prob_invtr_fail:
+                # inverter has failed
+                fail_time = np.random.normal(56, 28) # length of failure in days
+                fail_time = fail_time if fail_time > 0 else 0
+                self.capacity *= 2 * (fail_time / 365)
+
+        else:
+            raise ValueError("Unrecognised string '{}' in system_type field.".format(self.system_type))
+
+    def network_outage(self):
+        if self.system_type == "non-domestic":
+            self.capacity *= 0.99
+        elif self.system_type== "domestic":
+            pass
+        else:
+            raise ValueError("Unrecognised string '{}' in system_type field.".format(self.system_type))
+
+    def pvsystem_to_list(self):
+        return [self.capacity, self.eastings, self.northings, self.system_type]
