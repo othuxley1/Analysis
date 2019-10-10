@@ -109,7 +109,7 @@ class SiteListDerivation:
                      "EL_data" : EL_data, "RO_data" : RO_data}
         # ========================================================================
         self.derivation()
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
 
     def derivation(self, sm_cut_off=5):
         """

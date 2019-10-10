@@ -21,8 +21,8 @@ config["other"] = {}
 config["other"]["error_logfile"] = "monte_carlo_site_list_errors.txt"
 
 config["data_files"] = {}
-config["mysql_tables"]["solarsite_table"] = "solarsite_20181130"
+config["mysql_tables"]["original_site_list"] = ""
 
 
-with open(os.path.join(os.path.dirname(os.path.realpath(__file__)),'Config/PV_site_list_derivation.ini'), 'w') as configfile:
+with open(os.path.join(os.path.dirname(os.path.realpath(__file__)),'Config/site_list.ini'), 'w') as configfile:
     config.write(configfile)

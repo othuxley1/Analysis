@@ -9,8 +9,6 @@ as defined by the national PV site list.
 #  function to simulate unreported systems e.g. duplicate systems
 #  Method: modify_site_list()
 
-
-
 import pandas as pd
 import time as TIME
 from pv_system import PVSystem
@@ -22,7 +20,7 @@ class SiteListVariation:
     categorised errors.
     """
 
-    def __init__(self):
+    def __init__(self, simulation_id):
         self.SL_file = "../data/site_list/site_list.csv"
         self.err_tbl_file = "../data/site_list/error_table.csv"
         self.SL_df = None
@@ -31,6 +29,7 @@ class SiteListVariation:
         self.pv_system = None
         self.random_error_values = {}
         self.test = False
+        self.simulation_id = simulation_id
     
     def run(self):
         self.load_err_tbl()
@@ -120,6 +119,7 @@ class SiteListVariation:
 
         unreported_systems = self.unreported_systems()
         site_list = pd.concat((unreported_systems, self.SL_df))
+        new_site_list = []
 
         tstart = TIME.time()
         for site in site_list.itertuples():
@@ -137,23 +137,23 @@ class SiteListVariation:
                 # simulate revised down
                 pvs.revised_down()
                 # simulate network_outage
-
+                pvs.network_outage()
                 # simulate site_uncertainty
                 pvs.site_uncertainty()
                 # simulate string_outage
                 pvs.string_outage()
+                # store new system information
+                new_site_list.append(pvs.pvsystem_to_list)
             except DecommissionedError:
                 pass
 
-                # site has been decmmoissioned, do nothing
-                pass
-
-
+        import pdb; pdb.set_trace()
         print("Time taken for itertuples(): {}".format(TIME.time() - tstart))
 
-
-
-
+    def upload_results(self):
+        # TODO
+        #  change nans to None
+        with DBConnector(mysql_defaults=)
 
 
 
