@@ -1,4 +1,6 @@
 import os
+import configparser
+
 config = configparser.ConfigParser()
 """
 store_name : str
@@ -14,14 +16,19 @@ default_earliest_date : date
 query_settings > file_path : str
     Default path of files to be read into loads.
 """
-config["mysql_files"] = {}
-config["mysql_files"]["mysql_options_ssfdb2_readwrite_monte_carlo_sample_size_analysis"] = "C:/Users/owenh/Documents/GitRepos/Analysis/data/mysql_defaults/mysql_defaults.ssfdb2.readwrite.monte_carlo_sample_size_analysis"
+config["mysql_defaults"] = {}
+config["mysql_defaults"]["monte_carlo_sample_size_analysis"] = "C:/Users/owenh/Documents/GitRepos/capacity_mismatch_paper/data/mysql_defaults/mysql_defaults.ssfdb2.readwrite.monte_carlo_sample_size_analysis"
 
 config["other"] = {}
 config["other"]["error_logfile"] = "monte_carlo_site_list_errors.txt"
 
-config["data_files"] = {}
+config["mysql_tables"] = {}
 config["mysql_tables"]["original_site_list"] = ""
+config["mysql_tables"]["results"] = "site_list_monte_carlo"
+
+config["data_files"] = {}
+config["data_files"]["sl"] = "../data/site_list/site_list.csv"
+config["data_files"]["err_tbl"] = "../data/site_list/error_table.csv"
 
 
 with open(os.path.join(os.path.dirname(os.path.realpath(__file__)),'Config/site_list.ini'), 'w') as configfile:
