@@ -9,10 +9,15 @@ as defined by the national PV site list.
 #  function to simulate unreported systems e.g. duplicate systems
 #  Method: modify_site_list()
 
+import os
 import pandas as pd
 import time as TIME
 from pv_system import PVSystem
 from site_list_exceptions import DecommissionedError
+from configparser import ConfigParser
+from generic_tools import cached
+import pickle
+
 
 class SiteListVariation:
     """
@@ -21,8 +26,7 @@ class SiteListVariation:
     """
 
     def __init__(self, simulation_id):
-        self.SL_file = "../data/site_list/site_list.csv"
-        self.err_tbl_file = "../data/site_list/error_table.csv"
+        self.config = self.load_config()
         self.SL_df = None
         self.err_tbl_df = None
         self.modified_SL = None
@@ -30,22 +34,63 @@ class SiteListVariation:
         self.random_error_values = {}
         self.test = False
         self.simulation_id = simulation_id
+        self.verbose = False
     
     def run(self):
         self.load_err_tbl()
         self.load_SL()
         self.categorise_systems()
         self.simulate_new_site_list()
-    
+
+    @staticmethod
+    def load_config(file_location=None):
+        """
+        Load the config from file.
+
+        Parameters
+        ----------
+        `file_location` : string
+            Optionally provide the location of the config file as full
+            absolute path. If not provided, config is assumed to be in
+            'Config/config.ini'.
+        Returns
+        -------
+        dict
+            A dictionary of config parameters whose keys match the names used
+            in the config file.
+        """
+
+        try:
+            if not file_location:
+                file_location = (os.path.dirname(os.path.realpath(__file__))
+                                 + os.sep + "Config"
+                                 + os.sep + "site_list.ini")
+            parser = ConfigParser()
+            parser.read(file_location)
+            config = {}
+            config["config_location"] = file_location
+
+            config["mysql_defaults_monte_carlo_sample_size_analysis"] = \
+                parser.get("mysql_defaults", "monte_carlo_sample_size_analysis")
+            config["sl_file"] = parser.get("data_files", "sl")
+            config["err_tbl_file"] = parser.get("data_files", "err_tbl")
+            config["results_table"] = parser.get("mysql_tables", "results")
+        except FileNotFoundError as fnferr:
+            raise fnferr(errno.ENOENT, os.strerror(errno.ENOENT),file_location)
+        except AssertionError as error:
+            raise Exception("Error loading config, please check that"
+                            "the config file {} exists and lists all of "
+                            "the required values. {}".format(file_location))
+        return config
 
     def load_SL(self):
         "Load the site list csv file into a pandas dataframe."
-        self.SL_df = pd.read_csv(self.SL_file)
-        self.modified_SL_df = pd.read_csv(self.SL_file)
+        self.SL_df = pd.read_csv(self.config["sl_file"])
+        self.modified_SL_df = pd.read_csv(self.config["sl_file"])
     
     def load_err_tbl(self):
         "Load the error table into a pandas dataframe."
-        self.err_tbl_df = pd.read_csv(self.err_tbl_file)
+        self.err_tbl_df = pd.read_csv(self.config["err_tbl_file"])
     
     def categorise_systems(self, cut_off=0.01):
         """
@@ -115,6 +160,7 @@ class SiteListVariation:
 
         return pd.concat((domestic_subset, non_domestic_subset))
 
+    @cached("../data/pickle_files/simulate_new_site_list.pickle")
     def simulate_new_site_list(self):
 
         unreported_systems = self.unreported_systems()
@@ -127,7 +173,9 @@ class SiteListVariation:
             #   error handling for getattr()
             try:
                 # instantiate pvsystem class
-                pvs = PVSystem(site, self)
+                pvs = PVSystem(site, self, verbose=self.verbose)
+
+
                 # simulate decomissioned systems
                 pvs.decommissioned()
                 # simulate offline systems
@@ -143,24 +191,28 @@ class SiteListVariation:
                 # simulate string_outage
                 pvs.string_outage()
                 # store new system information
-                new_site_list.append(pvs.pvsystem_to_list)
+                new_site_list.append(pvs.pvsystem_to_list())
+                # import pdb;
+                # pdb.set_trace()
             except DecommissionedError:
                 pass
 
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
+        # TODO
+        #  step through error simulations and work out why alll capacities are zero
         print("Time taken for itertuples(): {}".format(TIME.time() - tstart))
+
+        return new_site_list
 
     def upload_results(self):
         # TODO
         #  change nans to None
-        with DBConnector(mysql_defaults=)
-
-
-
-
+        with DBConnector(mysql_defaults=self.config.mysql_defaults_monte_carlo_sample_size_analysis):
+            pass
+        return
 
 
 
 if __name__ == "__main__":
-    instance = SiteListVariation()
+    instance = SiteListVariation(1)
     instance.run()
