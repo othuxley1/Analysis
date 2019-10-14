@@ -16,7 +16,7 @@ from pv_system import PVSystem
 from site_list_exceptions import DecommissionedError
 from configparser import ConfigParser
 from generic_tools import cached
-import pickle
+from dbconnector import DBConnector
 
 
 class SiteListVariation:
@@ -25,8 +25,11 @@ class SiteListVariation:
     categorised errors.
     """
 
-    def __init__(self, simulation_id):
+    def __init__(self, simulation_id, verbose=False):
+        # TODO
+        #  add options as class input and write cli script
         self.config = self.load_config()
+        self.verbose = verbose
         self.SL_df = None
         self.err_tbl_df = None
         self.modified_SL = None
@@ -34,13 +37,16 @@ class SiteListVariation:
         self.random_error_values = {}
         self.test = False
         self.simulation_id = simulation_id
-        self.verbose = False
+        self.new_site_list = None
     
     def run(self):
         self.load_err_tbl()
         self.load_SL()
         self.categorise_systems()
-        self.simulate_new_site_list()
+        self.new_site_list = self.simulate_new_site_list()
+        # TODO
+        #  add check for optional -u upload flag in cli options
+        self.upload_results()
 
     @staticmethod
     def load_config(file_location=None):
@@ -122,7 +128,9 @@ class SiteListVariation:
             self.random_error_values[system_type] = {}
 
             # select rows matching system_type
-            error_table = self.err_tbl_df.loc[self.err_tbl_df.loc[:, "system_type"] == system_type, :]
+            error_table = self.err_tbl_df.loc[
+                          self.err_tbl_df.loc[:, "system_type"] == system_type, :
+                          ]
             # select row of table for system_type and error_category
             # import pdb; pdb.set_trace()
             all_errors = error_table.loc[
@@ -132,7 +140,9 @@ class SiteListVariation:
             return error
 
         elif error_type not in self.random_error_values[system_type]:
-            error_table = self.err_tbl_df.loc[ self.err_tbl_df.loc[:, "system_type"] == system_type, :]
+            error_table = self.err_tbl_df.loc[
+                          self.err_tbl_df.loc[:, "system_type"] == system_type, :
+                          ]
             all_errors = error_table.loc[
                 error_table.loc[:, "error_category"] == error_type
             ].loc[:, ["err1", "err2", "err3", "err4"] ]
@@ -164,6 +174,8 @@ class SiteListVariation:
     def simulate_new_site_list(self):
 
         unreported_systems = self.unreported_systems()
+        unreported_systems["unreported"] = "simulated"
+        self.SL_df["unreported"] = "original"
         site_list = pd.concat((unreported_systems, self.SL_df))
         new_site_list = []
 
@@ -195,7 +207,10 @@ class SiteListVariation:
                 # import pdb;
                 # pdb.set_trace()
             except DecommissionedError:
-                pass
+                new_site_list.append(pvs.pvsystem_to_list())
+            except:
+                raise Exception("Problem simulating errors...")
+                import pdb; pdb.set_trace()
 
         # import pdb; pdb.set_trace()
         # TODO
@@ -207,9 +222,16 @@ class SiteListVariation:
     def upload_results(self):
         # TODO
         #  change nans to None
-        with DBConnector(mysql_defaults=self.config.mysql_defaults_monte_carlo_sample_size_analysis):
-            pass
-        return
+        # import pdb; pdb.set_trace()
+        with DBConnector(mysql_defaults=
+                         self.config["mysql_defaults_monte_carlo_sample_size_analysis"]) as dbc:
+            sql_template = ("INSERT into `{}` (`simulation_id`, `site_id`, `unreported`, "
+                            "`decommissioned`, `capacity`, `eastings`, `northings`) "
+                            "values (%s, %s, %s, %s, %s, %s, %s);")
+            sql = sql_template.format(self.config["results_table"])
+            import pdb;
+            pdb.set_trace()
+            dbc.iud_query(sql, self.new_site_list)
 
 
 

@@ -16,6 +16,10 @@ class PVSystem:
         self.system_type = getattr(site_tuple, "system_type")
         self.SL_instance = SL_instance
         self.verbose = verbose
+        self.simulation_id = SL_instance.simulation_id
+        self.site_id = getattr(site_tuple, "Index")
+        self.unreported = getattr(site_tuple, "unreported")
+        self.decommissioned_flag = False
         # import pdb; pdb.set_trace()
         # self.start = datetime.date
 
@@ -26,11 +30,14 @@ class PVSystem:
                 tstart = TIME.time()
                 if self.verbose:
                     print("\nSimulating {}...".format(message))
-                    print("\tCapacity before {}: {}.".format(message, self.capacity))
+                    print("\tCapacity before {}: {}."
+                          .format(message, self.capacity))
                 fn(self)
                 if self.verbose:
-                    print("\tCapacity after {}: {}.".format(message, self.capacity))
-                    print("\t-> Finished, time taken: {}".format(TIME.time() - tstart))
+                    print("\tCapacity after {}: {}."
+                          .format(message, self.capacity))
+                    print("\t-> Finished, time taken: {}"
+                          .format(TIME.time() - tstart))
             return wrapper
         return decorator
 
@@ -44,6 +51,7 @@ class PVSystem:
         random_number = random.uniform(0,1)
 
         if random_number < probability:
+            self.decommissioned_flag = True
             raise DecommissionedError
         else:
             pass
@@ -117,7 +125,8 @@ class PVSystem:
         elif self.system_type == "domestic":
             error = np.random.normal(1, 0.15)
         else:
-            raise ValueError("Unrecognised string '{}' in system_type field.".format(self.system_type))
+            raise ValueError("Unrecognised string '{}' in system_type field."
+                             .format(self.system_type))
         self.capacity *= error
         # import pdb; pdb.set_trace()
 
@@ -146,7 +155,8 @@ class PVSystem:
                 self.capacity *= 2 * (fail_time / 365)
 
         else:
-            raise ValueError("Unrecognised string '{}' in system_type field.".format(self.system_type))
+            raise ValueError("Unrecognised string '{}' in system_type field."
+                             .format(self.system_type))
 
     @_verbose("network outage")
     def network_outage(self):
@@ -155,9 +165,21 @@ class PVSystem:
         elif self.system_type== "domestic":
             pass
         else:
-            raise ValueError("Unrecognised string '{}' in system_type field.".format(self.system_type))
+            raise ValueError("Unrecognised string '{}' in system_type field."
+                             .format(self.system_type))
 
     def pvsystem_to_list(self):
-        return [self.capacity, self.eastings, self.northings, self.system_type]
-
+        csf = ".8g"
+        # import pdb; pdb.set_trace()
+        self.eastings = self.eastings if not np.isnan(self.eastings) else None
+        self.northings = self.northings if not np.isnan(self.northings) else None
+        return [
+            self.simulation_id,
+            self.site_id,
+            self.unreported,
+            self.decommissioned_flag,
+            float(format(self.capacity, csf)),
+            self.eastings,
+            self.northings
+        ]
 
