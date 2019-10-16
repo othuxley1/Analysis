@@ -134,13 +134,13 @@ class PVSystem:
     def string_outage(self):
         self.error_type = "string_outage"
 
-        if self.system_type == "domestic":
+        if self.system_type == "non-domestic":
             prob_invtr_fail = np.random.normal(0.02, 0.06)
             prob_invtr_fail = prob_invtr_fail if (prob_invtr_fail > 0) else 0
             random_number = random.uniform(0, 1)
             if random_number < prob_invtr_fail:
                 # inverter has failed
-                fail_time = np.random.normal(14, 7) # length of failure in days
+                fail_time = np.random.normal(56, 28) # length of failure in days
                 fail_time = fail_time if fail_time > 0 else 0
                 self.capacity *= (fail_time/365)
 
@@ -150,7 +150,7 @@ class PVSystem:
             random_number = random.uniform(0, 1)
             if random_number < prob_invtr_fail:
                 # inverter has failed
-                fail_time = np.random.normal(56, 28) # length of failure in days
+                fail_time = np.random.normal(14, 7) # length of failure in days
                 fail_time = fail_time if fail_time > 0 else 0
                 self.capacity *= 2 * (fail_time / 365)
 
