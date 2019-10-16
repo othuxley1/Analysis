@@ -32,14 +32,14 @@ class SiteListVariation:
         #  add options as class input and write cli script
         self.config = self.load_config()
         self.verbose = verbose
-        self.SL_df = None
+        self.SL = None
         self.err_tbl_df = None
-        self.modified_SL = None
+        # self.modified_SL = None
         self.pv_system = None
         self.random_error_values = {}
         self.test = False
         self.simulation_id = simulation_id
-        self.new_site_list = None
+        self.new_SL = None
         self.system_type = system_type
         self.random_seed = np.random.seed(seed)
 
@@ -48,7 +48,7 @@ class SiteListVariation:
         self.load_SL()
         self.categorise_systems()
         # self.new_site_list = self.simulate_new_site_list()
-        self.simulate_new_site_list_vectorized()
+        self.simulate_new_site_list()
         # TODO
         #  add check for optional -u upload flag in cli options
         # self.upload_results()
@@ -96,9 +96,9 @@ class SiteListVariation:
 
     def load_SL(self):
         "Load the site list csv file into a pandas dataframe."
-        self.SL_df = pd.read_csv(self.config["sl_file"])
+        self.SL = pd.read_csv(self.config["sl_file"])
         self.test =  1000
-        self.modified_SL_df = pd.read_csv(self.config["sl_file"])
+        self.modified_SL = pd.read_csv(self.config["sl_file"])
     
     def load_err_tbl(self):
         "Load the error table into a pandas dataframe."
@@ -116,9 +116,9 @@ class SiteListVariation:
             domestic and non-domestic systems .
         """
     
-        self.SL_df["system_type"] = None
-        self.SL_df.loc[self.SL_df.loc[:, "Capacity"] < 0.01, "system_type"] = "domestic"
-        self.SL_df.loc[~(self.SL_df.loc[:, "Capacity"] < 0.01), "system_type"] = "non-domestic"
+        self.SL["system_type"] = None
+        self.SL.loc[self.SL.loc[:, "Capacity"] < 0.01, "system_type"] = "domestic"
+        self.SL.loc[~(self.SL.loc[:, "Capacity"] < 0.01), "system_type"] = "non-domestic"
 
     def return_error(self, error_type, system_type):
         """
@@ -161,29 +161,20 @@ class SiteListVariation:
 
     def unreported_systems(self):
 
-        domestic_error = self.return_error("unreported", "domestic")
-        non_domestic_error = self.return_error("unreported", "non-domestic")
-
-        # import pdb; pdb.set_trace()
-
+        error = self.return_error("unreported", self.system_type)
         # random domestic system subset
-        domestic_count = self.SL_df["system_type"].shape[0]
-        domestic_subset = self.SL_df.sample(int(domestic_count * domestic_error / 100))
-
-        #
-        non_domestic_count = self.SL_df["system_type"].shape[0]
-        non_domestic_subset = self.SL_df.sample(int(non_domestic_count * non_domestic_error / 100))
-
-        return pd.concat((domestic_subset, non_domestic_subset))
+        count = self.SL["system_type"].shape[0]
+        subset = self.SL.sample(int(count * error / 100))
+        return subset
 
     def simulate_new_site_list(self):
         unreported_systems = self.unreported_systems()
         unreported_systems["unreported"] = "simulated"
-        self.SL_df["unreported"] = "original"
-        site_list = pd.concat((unreported_systems, self.SL_df))
+        self.SL["unreported"] = "original"
+        self.new_SL = pd.concat((unreported_systems, self.SL))
 
         # import pdb; pdb.set_trace()
-        self.SL_df = self.SL_df.loc[self.SL_df.loc[:,"system_type"] == self.system_type, :]
+        self.new_SL = self.new_SL.loc[self.new_SL.loc[:,"system_type"] == self.system_type, :]
 
         # simulate decomissioning
         self.decomission()
@@ -219,7 +210,7 @@ class SiteListVariation:
         # np.random.seed(seed)
         error = self.return_error("decommissioned", self.system_type)
         probability = abs(error) / 100
-        self.SL_df["decommissioned"] = np.random.uniform(0, 1, self.SL_df.shape[0]) < probability
+        self.new_SL["decommissioned"] = np.random.uniform(0, 1, self.new_SL.shape[0]) < probability
         import pdb;
         # pdb.set_trace()
 
@@ -229,10 +220,10 @@ class SiteListVariation:
         # np.random.seed(seed)
         error = self.return_error("offline", self.system_type)
         probability = abs(error) / 100
-        random_numbers_array = np.random.uniform(0, 1, (self.SL_df.shape[0], 365))
+        random_numbers_array = np.random.uniform(0, 1, (self.new_SL.shape[0], 365))
         offline = random_numbers_array < probability
         de_rating = (365 - np.sum(offline, axis=1)) / 365
-        self.SL_df["Capacity"] *= de_rating
+        self.new_SL["Capacity"] *= de_rating
         # import pdb; pdb.set_trace()
 
     @staticmethod
@@ -257,7 +248,7 @@ class SiteListVariation:
         error = self.return_error(error_type, self.system_type)
         probability = abs(error) / 100
 
-        rows = self.SL_df.shape[0]
+        rows = self.new_SL.shape[0]
         random_number_array = np.random.uniform(0, 1, size=rows)
 
         truncnorm_instance = SiteListVariation.get_truncated_normal(mean, sd, low, upp)
@@ -267,7 +258,7 @@ class SiteListVariation:
         normal_array[~revision_indices] = 0
         normal_array += 1
 
-        self.SL_df["Capacity"] *= normal_array
+        self.new_SL["Capacity"] *= normal_array
         # import pdb; pdb.set_trace()
 
     def string_outage(self, inv_fail, fail_period):
@@ -275,7 +266,7 @@ class SiteListVariation:
         inv_fail_mean, inv_fail_sd = inv_fail
         fail_period_mean, fail_period_sd = fail_period
 
-        rows = self.SL_df.shape[0]
+        rows = self.new_SL.shape[0]
         random_number_array = np.random.uniform(0, 1, size=rows)
 
         inverter_fail_normal = np.random.normal(inv_fail_mean, inv_fail_sd, size=rows)
@@ -287,12 +278,12 @@ class SiteListVariation:
         de_rating = (365 - fail_period) / 365
         de_rating[~failed] = 1
 
-        self.SL_df["Capacity"] *= de_rating
+        self.new_SL["Capacity"] *= de_rating
         # import pdb; pdb.set_trace()
 
     def network_outage(self):
         if self.system_type == "domestic":
-            self.SL_df["Capacity"] *= 0.99
+            self.new_SL["Capacity"] *= 0.99
         else:
             pass
 
@@ -311,6 +302,6 @@ class SiteListVariation:
             dbc.iud_query(sql, self.new_site_list)
 
 
-
-instance = SiteListVariation(1)
-instance.run()
+if __name__ == "__main__":
+    instance = SiteListVariation(1)
+    instance.run()
