@@ -17,6 +17,8 @@ from site_list_exceptions import DecommissionedError
 from configparser import ConfigParser
 from generic_tools import cached
 from dbconnector import DBConnector
+import numpy as np
+from scipy.stats import truncnorm
 
 
 class SiteListVariation:
@@ -25,7 +27,7 @@ class SiteListVariation:
     categorised errors.
     """
 
-    def __init__(self, simulation_id, verbose=False):
+    def __init__(self, simulation_id, verbose=False, system_type="domestic", seed=1):
         # TODO
         #  add options as class input and write cli script
         self.config = self.load_config()
@@ -38,15 +40,18 @@ class SiteListVariation:
         self.test = False
         self.simulation_id = simulation_id
         self.new_site_list = None
-    
+        self.system_type = system_type
+        self.random_seed = np.random.seed(seed)
+
     def run(self):
         self.load_err_tbl()
         self.load_SL()
         self.categorise_systems()
-        self.new_site_list = self.simulate_new_site_list()
+        # self.new_site_list = self.simulate_new_site_list()
+        self.simulate_new_site_list_vectorized()
         # TODO
         #  add check for optional -u upload flag in cli options
-        self.upload_results()
+        # self.upload_results()
 
     @staticmethod
     def load_config(file_location=None):
@@ -92,6 +97,7 @@ class SiteListVariation:
     def load_SL(self):
         "Load the site list csv file into a pandas dataframe."
         self.SL_df = pd.read_csv(self.config["sl_file"])
+        self.test =  1000
         self.modified_SL_df = pd.read_csv(self.config["sl_file"])
     
     def load_err_tbl(self):
@@ -170,54 +176,125 @@ class SiteListVariation:
 
         return pd.concat((domestic_subset, non_domestic_subset))
 
-    @cached("../data/pickle_files/simulate_new_site_list.pickle")
     def simulate_new_site_list(self):
-
         unreported_systems = self.unreported_systems()
         unreported_systems["unreported"] = "simulated"
         self.SL_df["unreported"] = "original"
         site_list = pd.concat((unreported_systems, self.SL_df))
-        new_site_list = []
-
-        tstart = TIME.time()
-        for site in site_list.itertuples():
-            # TODO
-            #   error handling for getattr()
-            try:
-                # instantiate pvsystem class
-                pvs = PVSystem(site, self, verbose=self.verbose)
-
-
-                # simulate decomissioned systems
-                pvs.decommissioned()
-                # simulate offline systems
-                pvs.offline()
-                # simulate revised up
-                pvs.revised_up()
-                # simulate revised down
-                pvs.revised_down()
-                # simulate network_outage
-                pvs.network_outage()
-                # simulate site_uncertainty
-                pvs.site_uncertainty()
-                # simulate string_outage
-                pvs.string_outage()
-                # store new system information
-                new_site_list.append(pvs.pvsystem_to_list())
-                # import pdb;
-                # pdb.set_trace()
-            except DecommissionedError:
-                new_site_list.append(pvs.pvsystem_to_list())
-            except:
-                raise Exception("Problem simulating errors...")
-                import pdb; pdb.set_trace()
 
         # import pdb; pdb.set_trace()
-        # TODO
-        #  step through error simulations and work out why alll capacities are zero
-        print("Time taken for itertuples(): {}".format(TIME.time() - tstart))
+        self.SL_df = self.SL_df.loc[self.SL_df.loc[:,"system_type"] == self.system_type, :]
 
-        return new_site_list
+        # simulate decomissioning
+        self.decomission()
+
+        # simulate offline
+        self.offline()
+        # import pdb; pdb.set_trace()
+
+        # simulate revised_up
+        self.revision("revised_up", 0.3, 0.1)
+
+        # simulate revised_down
+        self.revision("revised_down", -0.3, 0.1)
+
+        if self.system_type == "domestic":
+            # simulate site_uncertainty
+            self.revision("site_uncertainty", 0, 0.15)
+            # simulate string_outage
+            self.string_outage((0.02, 0.06), (56, 28))
+
+        elif self.system_type == "non-domestic":
+            # simulate site_uncertainty
+            self.revision("site_uncertainty", -0.05, 0.1)
+            # simulate string_outage
+            self.string_outage((0.01, 0.03), (14, 7))
+        else:
+            raise ValueError("Problem with SiteListVariation.system_type variable")
+
+        self.network_outage()
+        # import pdb; pdb.set_trace()
+
+    def decomission(self):
+        # np.random.seed(seed)
+        error = self.return_error("decommissioned", self.system_type)
+        probability = abs(error) / 100
+        self.SL_df["decommissioned"] = np.random.uniform(0, 1, self.SL_df.shape[0]) < probability
+        import pdb;
+        # pdb.set_trace()
+
+    def offline(self):
+        # TODO
+        #  probability of being offline seems too large
+        # np.random.seed(seed)
+        error = self.return_error("offline", self.system_type)
+        probability = abs(error) / 100
+        random_numbers_array = np.random.uniform(0, 1, (self.SL_df.shape[0], 365))
+        offline = random_numbers_array < probability
+        de_rating = (365 - np.sum(offline, axis=1)) / 365
+        self.SL_df["Capacity"] *= de_rating
+        # import pdb; pdb.set_trace()
+
+    @staticmethod
+    def get_truncated_normal(mean, sd, low=0, upp=1):
+        """
+        :param mean: distribution mean
+        :param sd: distribution standard deviation
+        :param low: lower bound
+        :param upp: upper bound
+        :return: returns a scipy.stats.truncnorm object
+
+        .. see also:: https://docs.scipy.org/doc/scipy/reference/generated/
+        scipy.stats.truncnorm.html#scipy.stats.truncnorm
+        .. see aldo:: https://stackoverflow.com/questions/36894191/
+        how-to-get-a-normal-distribution-within-a-range-in-numpy?lq=1
+        """
+        a, b = (low - mean) / sd, (upp - mean) / sd
+        return truncnorm(a, b, loc=mean, scale=sd)
+
+    def revision(self, error_type,  mean, sd, low=-1, upp=1):
+
+        error = self.return_error(error_type, self.system_type)
+        probability = abs(error) / 100
+
+        rows = self.SL_df.shape[0]
+        random_number_array = np.random.uniform(0, 1, size=rows)
+
+        truncnorm_instance = SiteListVariation.get_truncated_normal(mean, sd, low, upp)
+        normal_array = truncnorm_instance.rvs(rows)
+
+        revision_indices = random_number_array < probability
+        normal_array[~revision_indices] = 0
+        normal_array += 1
+
+        self.SL_df["Capacity"] *= normal_array
+        # import pdb; pdb.set_trace()
+
+    def string_outage(self, inv_fail, fail_period):
+
+        inv_fail_mean, inv_fail_sd = inv_fail
+        fail_period_mean, fail_period_sd = fail_period
+
+        rows = self.SL_df.shape[0]
+        random_number_array = np.random.uniform(0, 1, size=rows)
+
+        inverter_fail_normal = np.random.normal(inv_fail_mean, inv_fail_sd, size=rows)
+        failed = random_number_array < inverter_fail_normal
+
+        fail_period_instance = SiteListVariation.get_truncated_normal(fail_period_mean, fail_period_sd, 0, 365)
+        fail_period = fail_period_instance.rvs(rows)
+
+        de_rating = (365 - fail_period) / 365
+        de_rating[~failed] = 1
+
+        self.SL_df["Capacity"] *= de_rating
+        # import pdb; pdb.set_trace()
+
+    def network_outage(self):
+        if self.system_type == "domestic":
+            self.SL_df["Capacity"] *= 0.99
+        else:
+            pass
 
     def upload_results(self):
         # TODO
@@ -235,6 +312,5 @@ class SiteListVariation:
 
 
 
-if __name__ == "__main__":
-    instance = SiteListVariation(1)
-    instance.run()
+instance = SiteListVariation(1)
+instance.run()
