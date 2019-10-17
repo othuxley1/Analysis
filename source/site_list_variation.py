@@ -19,7 +19,7 @@ from generic_tools import cached
 from dbconnector import DBConnector
 import numpy as np
 from scipy.stats import truncnorm
-
+import errno
 
 class SiteListVariation:
     """
@@ -27,7 +27,8 @@ class SiteListVariation:
     categorised errors.
     """
 
-    def __init__(self, simulation_id, verbose=False, system_type="domestic", seed=1):
+    def __init__(self, simulation_id, verbose=False,
+                 system_type="domestic", seed=1):
         # TODO
         #  add options as class input and write cli script
         self.config = self.load_config()
@@ -86,12 +87,13 @@ class SiteListVariation:
             config["sl_file"] = parser.get("data_files", "sl")
             config["err_tbl_file"] = parser.get("data_files", "err_tbl")
             config["results_table"] = parser.get("mysql_tables", "results")
-        except FileNotFoundError as fnferr:
-            raise fnferr(errno.ENOENT, os.strerror(errno.ENOENT),file_location)
-        except AssertionError as error:
-            raise Exception("Error loading config, please check that"
-                            "the config file {} exists and lists all of "
-                            "the required values. {}".format(file_location))
+        except FileNotFoundError:
+            raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT),
+                                    file_location)
+        except AssertionError:
+            raise AssertionError("Error loading config, please check that"
+                                 "the config file {} exists and lists all of "
+                                 "the required values.".format(file_location))
         return config
 
     def load_SL(self):
@@ -111,7 +113,7 @@ class SiteListVariation:
 
         Parameters
         ----------
-        `cut_off` : float
+        cut_off : float,
             The cut off, as measured by capacity in MW, used to separate 
             domestic and non-domestic systems .
         """
@@ -120,10 +122,25 @@ class SiteListVariation:
         self.SL.loc[self.SL.loc[:, "Capacity"] < 0.01, "system_type"] = "domestic"
         self.SL.loc[~(self.SL.loc[:, "Capacity"] < 0.01), "system_type"] = "non-domestic"
 
-    def return_error(self, error_type, system_type):
+    def return_error(self, error_type: str, system_type: str) -> float:
         """
-        Randomly remove sites from the sitelist to simulate decomissioned
-        systems.
+
+        A function to select the appropriate error value for any given error
+        category and system type.
+
+        Parameters
+        ----------
+        error_type: str,
+            The category of the error to select data for.
+        system_type: str,
+            Specify whether to get the error data for domestic or non-domestic
+            systems.
+
+        Returns
+        -------
+        error: float,
+            Error value for the requested category and system type.
+
         """
         # TODO
         #  randomly select errors from err_tbl
@@ -154,7 +171,7 @@ class SiteListVariation:
             ].loc[:, ["err1", "err2", "err3", "err4"] ]
             error = all_errors.sample(1, axis=1).values[0][0]
             self.random_error_values[system_type][error_type] = error
-            return error
+            return float(error)
 
         else:
             return self.random_error_values[system_type][error_type]
@@ -227,23 +244,33 @@ class SiteListVariation:
         # import pdb; pdb.set_trace()
 
     @staticmethod
-    def get_truncated_normal(mean, sd, low=0, upp=1):
+    def get_truncated_normal(mean: float, sd: float,
+                             low: float = 0., upp: float = 1) -> object:
         """
-        :param mean: distribution mean
-        :param sd: distribution standard deviation
-        :param low: lower bound
-        :param upp: upper bound
-        :return: returns a scipy.stats.truncnorm object
 
-        .. see also:: https://docs.scipy.org/doc/scipy/reference/generated/
-        scipy.stats.truncnorm.html#scipy.stats.truncnorm
-        .. see aldo:: https://stackoverflow.com/questions/36894191/
-        how-to-get-a-normal-distribution-within-a-range-in-numpy?lq=1
+        A function to return a scipy object for a truncated normal pdf.
+
+        Parameters
+        ----------
+        mean: float,
+            The pdf mean.
+        sd: float,
+            The pdf standard deviation.
+        low: float,
+            The lower boundary of the pdf.
+        upp: float,
+            The upper boundary of the pdf.
+
+        Returns
+        -------
+        object, A scipy.stats.truncnorm object.
         """
+
         a, b = (low - mean) / sd, (upp - mean) / sd
         return truncnorm(a, b, loc=mean, scale=sd)
 
-    def revision(self, error_type,  mean, sd, low=-1, upp=1):
+    def revision(self, error_type: str,  mean: float,
+                 sd: float, low: int = -1, upp: int = 1):
 
         error = self.return_error(error_type, self.system_type)
         probability = abs(error) / 100
@@ -261,7 +288,23 @@ class SiteListVariation:
         self.new_SL["Capacity"] *= normal_array
         # import pdb; pdb.set_trace()
 
-    def string_outage(self, inv_fail, fail_period):
+    def string_outage(self, inv_fail: (float, float), fail_period: (float, float)):
+
+        """
+
+        Simulate the impact of inverter string failure on the representative
+        capacity for each individual PV system.
+
+        Parameters
+        ----------
+        inv_fail: (float, float),
+            A tuple containing the (mean, standard deviation) for the
+            probability that an inverter will fail.
+        fail_period: (float, float),
+            A tuple containing the (mean, standard deviation) for the
+            distribution of  failure period.
+
+        """
 
         inv_fail_mean, inv_fail_sd = inv_fail
         fail_period_mean, fail_period_sd = fail_period
@@ -282,12 +325,18 @@ class SiteListVariation:
         # import pdb; pdb.set_trace()
 
     def network_outage(self):
+
+        """Simulate network outage impact on representative system capacity"""
+
         if self.system_type == "domestic":
             self.new_SL["Capacity"] *= 0.99
         else:
             pass
 
     def upload_results(self):
+
+        """Upload results to db."""
+
         # TODO
         #  change nans to None
         # import pdb; pdb.set_trace()
