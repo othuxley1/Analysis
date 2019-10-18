@@ -25,6 +25,10 @@ config["other"]["error_logfile"] = "PV_site_list_derivation_errors.txt"
 config["mysql_tables"] = {}
 config["mysql_tables"]["solarsite_table"] = "solarsite_20181130"
 
+if not os.path.exists('Config'):
+    print("No Config folder, creating one here: {}"
+          .format(os.path.join(os.getcwd() ,'Config')))
+    os.mkdir('Config')
 
 with open(os.path.join(os.path.dirname(os.path.realpath(__file__)),'Config/PV_site_list_derivation.ini'), 'w') as configfile:
     config.write(configfile)
