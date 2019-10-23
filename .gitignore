@@ -134,3 +134,5 @@ data/mysql_defaults/
 .idea/
 
 .vscode/
+
+data/

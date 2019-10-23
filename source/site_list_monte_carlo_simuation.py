@@ -29,6 +29,7 @@ class MonteCarloSiteList:
         if os.path.isfile(self.out_file):
             raise FileExistsError("Please change the output file "
                                   "and try again.")
+        tstart = TIME.time()
         count = 0
         if self.random_seeds is None:
             print("executing MC simulation...")
@@ -37,7 +38,10 @@ class MonteCarloSiteList:
                 self.run_MC_without_seed(self.n)
                 self.write_results_to_csv(self.clock_seeds,
                                           self.national_capacity)
+                self.clock_seeds = []
+                self.national_capacity = []
                 count += self.n
+        print("Finished, time taken {}...".format(TIME.time() - tstart))
 
         # TODO
         #  make this bit work
@@ -81,7 +85,7 @@ class MonteCarloSiteList:
             self.sim_stats(sl)
         return sl_variants
 
-    def sim_stats(self, sl: object) -> None:
+    def sim_stats(self, sl):
         """
 
         Calculate population statistics for each permutation of the site list
@@ -94,11 +98,12 @@ class MonteCarloSiteList:
             the analysis has been completed.
 
         """
-        national_capacity = sl.Capacity.sum()
+        # import pdb; pdb.set_trace()
+        national_capacity = sl.loc[sl.loc[:, "decommissioned"] == 0].Capacity.sum()
         print(national_capacity)
         self.national_capacity.append(national_capacity)
 
-    def write_results_to_csv(self, seeds: list, capacities: list) -> None:
+    def write_results_to_csv(self, seeds, capacities):
         """
 
         Write results to csv using append method.
@@ -122,5 +127,5 @@ class MonteCarloSiteList:
                     out.write("{},{}\n".format(seed, capacity))
 
 # if __name__ == "__main__":
-MC_instance = MonteCarloSiteList(N=2, n=1)
+MC_instance = MonteCarloSiteList(N=10000, n=100)
 MC_instance.run()

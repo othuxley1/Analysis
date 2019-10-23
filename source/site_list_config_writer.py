@@ -27,8 +27,8 @@ config["mysql_tables"]["original_site_list"] = ""
 config["mysql_tables"]["results"] = "site_list_monte_carlo"
 
 config["data_files"] = {}
-config["data_files"]["sl"] = "../data/site_list/site_list.csv"
-config["data_files"]["err_tbl"] = "../data/site_list/error_table.csv"
+config["data_files"]["sl"] = "../data/site_list.csv"
+config["data_files"]["err_tbl"] = "../data/error_table.csv"
 
 
 with open(os.path.join(os.path.dirname(os.path.realpath(__file__)),'Config/site_list.ini'), 'w') as configfile:
