@@ -2,6 +2,8 @@
 import time as TIME
 import pandas as pd
 import os
+import gc
+from itertools import zip_longest
 
 # from generic_tools import print_progress
 from site_list_variation import SiteListVariation
@@ -20,7 +22,14 @@ class MonteCarloSiteList:
         self.N = int(N)
         self.n = int(n)
         self.national_capacity = []
-        self.out_file = "../data/results_{}N.csv".format(self.N)
+        self.out_file = "../data/results_from_seed_{}N.csv".format(self.N)
+
+    @staticmethod
+    def grouper(iterable, n, fillvalue=None):
+        """Collect data into fixed-length chunks or blocks"""
+        # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
+        args = [iter(iterable)] * n
+        yield from zip_longest(*[iter(iterable)] * n, fillvalue=fillvalue)
 
     def run(self):
 
@@ -30,9 +39,10 @@ class MonteCarloSiteList:
             raise FileExistsError("Please change the output file "
                                   "and try again.")
         tstart = TIME.time()
-        count = 0
+
         if self.random_seeds is None:
             print("executing MC simulation...")
+            count = 0
             while not count // self.N:
                 # print("here")
                 self.run_MC_without_seed(self.n)
@@ -41,19 +51,58 @@ class MonteCarloSiteList:
                 self.clock_seeds = []
                 self.national_capacity = []
                 count += self.n
+        else:
+            for chunk in MonteCarloSiteList.grouper(self.random_seeds, self.n):
+                self.run_MC_with_seed(chunk)
+                self.write_results_to_csv(chunk,
+                                          self.national_capacity)
+                self.national_capacity = []
+
         print("Finished, time taken {}...".format(TIME.time() - tstart))
 
         # TODO
-        #  make this bit work
-        # if self.random_seeds is not None:
-        #     self.run_MC_with_seed()
-        #     self.write_results_to_csv(self.random_seeds, self.national_capacity)
+        #  rewrite with/without as one function
 
-
-
-    def run_MC_without_seed(self, N: int) -> list:
+    def run_MC_with_seed(self, chunk):
         """
-        A function to run the SiteListVariation
+        A function to run the SiteListVariation using a pre-determined list of
+        seeds for the numpy random number generator.
+        Parameters
+        ----------
+        N: int,
+            The number of site list permutations to calculate.
+
+        Returns
+        -------
+        sl_variants: list,
+            A list of pandas dataframe objects containing the site list
+            permutations.
+        """
+        # TODO
+        #  fix sim parameter in SiteListVariation - not acting as intended here
+        sl_variants = []
+        for index, seed in enumerate(chunk):
+            domestic = SiteListVariation(index, verbose=False,
+                                         system_type="domestic",
+                                         seed=seed)
+            non_domestic = SiteListVariation(index, verbose=False,
+                                             system_type="non-domestic",
+                                             seed=seed)
+            domestic.run()
+            non_domestic.run()
+            sl = pd.concat((domestic.new_SL, non_domestic.new_SL))
+            sl_variants.append(sl)
+            self.sim_stats(sl)
+            del domestic
+            del non_domestic
+        return sl_variants
+
+
+
+    def run_MC_without_seed(self, N):
+        """
+        A function to run the SiteListVariation using clock time to seed the
+        numpy random number generator.
         Parameters
         ----------
         N: int,
@@ -67,7 +116,7 @@ class MonteCarloSiteList:
         """
 
         sl_variants = []
-        for sim in range(N+1):
+        for sim in range(N):
             # get clock time to seed SiteListVariation random generator
             clock_seed = int(TIME.time())
             self.clock_seeds.append(clock_seed)
@@ -83,6 +132,8 @@ class MonteCarloSiteList:
             sl = pd.concat((domestic.new_SL, non_domestic.new_SL))
             sl_variants.append(sl)
             self.sim_stats(sl)
+            del domestic
+            del non_domestic
         return sl_variants
 
     def sim_stats(self, sl):
@@ -126,6 +177,18 @@ class MonteCarloSiteList:
                 for seed, capacity in zip(seeds, capacities):
                     out.write("{},{}\n".format(seed, capacity))
 
-# if __name__ == "__main__":
-MC_instance = MonteCarloSiteList(N=10000, n=100)
+
+def load_seed_data(file):
+    seeds = []
+    with open(file, 'r') as fid:
+        next(fid)
+        for line in fid.readlines():
+            # import pdb; pdb.set_trace()
+            data = [x for x in line.strip('\n').split(',')]
+            seeds.append(int(data[0]))
+    return seeds
+
+input_seeds_file = "../data/results_10N.csv"
+input_seeds = load_seed_data(input_seeds_file)
+MC_instance = MonteCarloSiteList(random_seeds=input_seeds, N=len(input_seeds), n=1)
 MC_instance.run()
