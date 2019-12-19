@@ -185,63 +185,8 @@ class SiteListVariation:
         return subset
 
     def simulate_new_site_list(self):
-        unreported_systems = self.unreported_systems()
-        unreported_systems["unreported"] = "simulated"
-        self.SL["unreported"] = "original"
-        self.new_SL = pd.concat((unreported_systems, self.SL))
 
-        # import pdb; pdb.set_trace()
-        self.new_SL = self.new_SL.loc[self.new_SL.loc[:,"system_type"] == self.system_type, :]
 
-        # simulate decomissioning
-        self.decomission()
-
-        # simulate offline
-        self.offline()
-        # import pdb; pdb.set_trace()
-
-        # simulate revised_up
-        self.revision("revised_up", 0.3, 0.1)
-
-        # simulate revised_down
-        self.revision("revised_down", -0.3, 0.1)
-
-        if self.system_type == "domestic":
-            # simulate site_uncertainty
-            self.revision("site_uncertainty", 0, 0.15)
-            # simulate string_outage
-            self.string_outage((0.02, 0.06), (56, 28))
-
-        elif self.system_type == "non-domestic":
-            # simulate site_uncertainty
-            self.revision("site_uncertainty", -0.05, 0.1)
-            # simulate string_outage
-            self.string_outage((0.01, 0.03), (14, 7))
-        else:
-            raise ValueError("Problem with SiteListVariation.system_type variable")
-
-        self.network_outage()
-        # import pdb; pdb.set_trace()
-
-    def decommission(self):
-        # np.random.seed(seed)
-        error = self.return_error("decommissioned", self.system_type)
-        probability = abs(error) / 100
-        self.new_SL["decommissioned"] = np.random.uniform(0, 1, self.new_SL.shape[0]) < probability
-        import pdb;
-        # pdb.set_trace()
-
-    def offline(self):
-        # TODO
-        #  probability of being offline seems too large
-        # np.random.seed(seed)
-        error = self.return_error("offline", self.system_type)
-        probability = abs(error) / 100
-        random_numbers_array = np.random.uniform(0, 1, (self.new_SL.shape[0], 365))
-        offline = random_numbers_array < probability
-        de_rating = (365 - np.sum(offline, axis=1)) / 365
-        self.new_SL["Capacity"] *= de_rating
-        # import pdb; pdb.set_trace()
 
     @staticmethod
     def get_truncated_normal(mean: float, sd: float,
@@ -269,24 +214,7 @@ class SiteListVariation:
         a, b = (low - mean) / sd, (upp - mean) / sd
         return truncnorm(a, b, loc=mean, scale=sd)
 
-    def revision(self, error_type: str,  mean: float,
-                 sd: float, low: int = -1, upp: int = 1):
 
-        error = self.return_error(error_type, self.system_type)
-        probability = abs(error) / 100
-
-        rows = self.new_SL.shape[0]
-        random_number_array = np.random.uniform(0, 1, size=rows)
-
-        truncnorm_instance = SiteListVariation.get_truncated_normal(mean, sd, low, upp)
-        normal_array = truncnorm_instance.rvs(rows)
-
-        revision_indices = random_number_array < probability
-        normal_array[~revision_indices] = 0
-        normal_array += 1
-
-        self.new_SL["Capacity"] *= normal_array
-        # import pdb; pdb.set_trace()
 
     def string_outage(self, inv_fail: (float, float), fail_period: (float, float)):
 
@@ -325,12 +253,6 @@ class SiteListVariation:
         # how much of a pv system does a string outage effect?
         self.new_SL["Capacity"] *= de_rating
         # import pdb; pdb.set_trace()
-
-    def network_outage(self):
-
-        """Simulate network outage impact on representative system capacity"""
-
-        self.new_SL["Capacity"] *= 0.99
 
     def upload_results(self):
 
