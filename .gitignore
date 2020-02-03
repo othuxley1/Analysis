@@ -136,3 +136,7 @@ data/mysql_defaults/
 .vscode/
 
 data/
+
+graphs/
+
+*.png
