@@ -35,9 +35,7 @@ class FITExcelFile:
         self.plot = plot
         self.verbose = verbose
         self.sheet_dfs = None
-        self.data = []
-        self.data_group_install_capacity = []
-        self.data_group_date = None
+        self.data_group_capacity_date = []
 
     def run(self):
         """Run class methods."""
@@ -84,45 +82,29 @@ class FITExcelFile:
         df = pd.read_excel(self.xlsx, sheet, dtype=column_types,
                            parse_dates=date_cols)
         pv = df.loc[df["Technology Type"] == "Photovoltaic"]
-        pv = pv[["Solar PV Installation  Type",
-                 "Maximum Capacity (kW)", "Tariff",
-                 "Technology Type", "Tariff Start Date",
-                 "Tariff End Date"]]
-        pv = pv[~pv["Tariff"].isnull().values]
-        return pv
+        standard = pv[pv["Solar PV Installation  Type"] == "Standard"]
 
-    @staticmethod
-    def plot_heat_map(df, sheet):
+        if "Energy Efficiency Requirement rating" in standard.columns:
+            standard_higher = standard[
+                standard["Energy Efficiency Requirement rating"] == "Higher"
+                ]
+        else:
+            standard["Energy Efficiency Requirement rating"] = "Higher"
+            standard_higher = standard.copy()
 
-        """
-        A function to plot heatmaps of the FIT price for sheets in the
-        FIT excel file.
-
-        Parameters
-        ----------
-        df: pandas.DataFrame
-            The DataFrame of the sheet from the FIT excel file which we want
-            to plot a heatmap for.
-        sheet
-
-        Returns
-        -------
-        None
-        """
-
-        # group FIT data and take max value for plotting
-        grouped = df.groupby(["Solar PV Installation  Type",
-                              "Maximum Capacity (kW)"]).max()[["Tariff"]]
-        piv_grouped = grouped.unstack()
-        f, ax = plt.subplots(figsize=(9, 6))
-        ax = sns.heatmap(piv_grouped["Tariff"], vmin=0, vmax=45, annot=True,
-                         fmt=".1f", linewidths=.5, square=False,
-                         linecolor="white", ax=ax)
-
-        # fix for bug in matplotlib that cuts off top and bottom of axis
-        bottom, top = ax.get_ylim()
-        ax.set_ylim(bottom + 0.5, top - 0.5)
-        ax.set_title(sheet)
+        standard_higher = standard_higher[
+            ["Solar PV Installation  Type",
+             "Maximum Capacity (kW)",
+             "Tariff",
+             "Technology Type",
+             "Tariff Start Date",
+             "Tariff End Date",
+             "Energy Efficiency Requirement rating"]
+        ]
+        standard_higher = standard_higher[
+            ~standard_higher["Tariff"].isnull().values
+        ]
+        return standard_higher
 
     def collate_data(self):
 
@@ -136,16 +118,16 @@ class FITExcelFile:
             if df["Tariff End Date"].isnull().sum() >0:
                 raise
 
-            grouped = df.groupby(["Solar PV Installation  Type",
-                                  "Maximum Capacity (kW)"]).max()
+            # group by max cap and date to ensure 
+            # that there are no duplicate rows
+            grouped = df.groupby([
+                "Maximum Capacity (kW)",
+                "Tariff End Date"]).max()
             # grouped has multiindex, we need to get data into list form
             # so that all the sheets can be consolidated
             data_max = [[i, j, *v] for (i,j), v in zip(grouped.index,
                                                        grouped.values)]
-            self.data_group_install_capacity += data_max
-            # ungrouped data to list, so all sheets can be consolidated
-            data_full = df.values.tolist()
-            self.data += data_full
+            self.data_group_capacity_date += data_max
 
         def list_to_df(_data, header):
             """
@@ -167,31 +149,32 @@ class FITExcelFile:
             _df["Tariff End Date"] = pd.to_datetime(_df["Tariff End Date"])
             return _df
 
-        column_headers = df.columns.values.tolist()
-        self.data_group_install_capacity = list_to_df(
-            self.data_group_install_capacity,
+        column_headers = ["Maximum Capacity (kW)", "Tariff End Date"] \
+                         + grouped.columns.values.tolist()
+        self.data_group_capacity_date = list_to_df(
+            self.data_group_capacity_date,
             column_headers
         )
-        self.data = list_to_df(self.data, column_headers)
-        self.data_group_date = self.data.groupby(["Tariff End Date"]).mean()
+
         if self.plot:
             self.plot_graphs()
+
         return
 
     def plot_graphs(self):
 
         """Plot linegraphs of the FIT rate."""
 
-        df = self.data_group_install_capacity
-        f = sns.FacetGrid(df, col="Solar PV Installation  Type",
-                          hue="Maximum Capacity (kW)", height=5,
-                          aspect=1.5, col_wrap=2)
-        f.map(plt.step, "Tariff End Date", "Tariff")
-        f.add_legend()
-        f.savefig("../graphs/grid_lineplot.png", dpi=300)
-        plt.show()
+        # df = self.data_group_capacity_date
+        # f = sns.FacetGrid(df, col="Solar PV Installation  Type",
+        #                   hue="Maximum Capacity (kW)", height=5,
+        #                   aspect=1.5, col_wrap=2)
+        # f.map(plt.step, "Tariff End Date", "Tariff")
+        # f.add_legend()
+        # f.savefig("../graphs/grid_lineplot.png", dpi=300)
+        # plt.show()
 
-        df = self.data_group_date
+        df = self.data_group_capacity_date
         df.reset_index(inplace=True)
         g = plt.figure()
         sns.lineplot(x="Tariff End Date", y="Tariff", data=df,
@@ -203,21 +186,18 @@ class FITExcelFile:
 
         """Save data to csv file."""
 
-        self.data.to_csv("../data/FIT_payment_rate.csv")
-        self.data_group_date.to_csv(
-            "../data/FIT_payment_rate_group_by_date.csv"
+        self.data_group_capacity_date.drop("index", axis=1, inplace=True)
+        self.data_group_capacity_date.to_csv(
+            "../data/FIT_payment_rate_standard_group_by_capacity_and_date.csv",
+            index=False
         )
-        self.data_group_install_capacity.to_csv(
-            "../data/FIT_payment_rate_group_by_installation_and_capacity.csv"
-        )
-
 
 class FITRate:
 
     """A class to calculate the FIT rate on a given date."""
 
     def __init__(self):
-        self.fit_rate_file = "../data/FIT_payment_rate_group_by_date.csv"
+        self.fit_rate_file = "../data/FIT_payment_rate_standard_group_by_capacity_and_date.csv"
         self.data = pd.read_csv(self.fit_rate_file)
         self.data["Tariff End Date"] = pd.to_datetime(
             self.data["Tariff End Date"]
@@ -225,11 +205,15 @@ class FITRate:
         self.max_fit = self.data.Tariff.max()
         self.min_fit = self.data.Tariff.min()
 
-    def get_fit_rate(self, _date):
+    def get_fit_rate(self, _date, capacity):
         if self.data[self.data["Tariff End Date"] >= _date].empty:
             return 0
         else:
-            return self.data[self.data["Tariff End Date"] >= _date].iloc[0, -1]
+            cap = self.data[self.data["Maximum Capacity (kW)"] == capacity]
+            cap_date = cap[cap["Tariff End Date"] >= _date][["Tariff",
+                                                             "Tariff End Date"]]
+            tariff = cap_date.sort_values("Tariff End Date").iloc[0,0]
+            return tariff
 
 
 if __name__ == "__main__":
@@ -238,5 +222,4 @@ if __name__ == "__main__":
     fit_excel_file_instance.plot_graphs()
     fit_excel_file_instance.save_data()
 
-    fit_rate_instance = FITRate()
-    data = fit_rate_instance.data
+    self = FITRate()
