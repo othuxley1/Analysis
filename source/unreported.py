@@ -287,12 +287,14 @@ class InstallRate:
 
         # get the FIT rate for each row, calculated from the
         # date using the instance of the FITRate class.
+        import pdb; pdb.set_trace()
         total["FIT"] = total["Date"]\
             .apply(FR_instance.get_fit_rate).astype(float)
 
         # calculate the probability of unreporting using a
         # y = exp(-5x) relationship between FIT rate in pence and
         # the probability of unreporting
+        import pdb; pdb.set_trace()
         total["exp(-5x)"] = total["FIT"]\
             .apply(self.exponential_relationship, a=5)
 
