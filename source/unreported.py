@@ -98,98 +98,10 @@ class InstallRate:
 
         return unstacked, data_T
 
-    def linear_relationship(self, fit_rate, m=-1, c=1):
-        """
-        A function to calculate the probability that a solar pv
-        system is installed and not reported based on an inverse linear
-        relationship between the FIT rate and reporting probability.
-        The transformation used is y = ((gradient/range) * (x-min)) + c
-        Where
-            - y is the probability that a pv system is not reported
-            - x is the FIT rate in pence
-            - min is the minimum fit rate
-            - range is the range of the fit rate in pence
-
-        Parameters
-        ----------
-        fit_rate : float
-            The fit_rate in pence for which we want to calculate the probability
-            that a pv system is unreported (e.g. the owner does not claim
-            subsidy).
-        m : int, float
-            The gradient of the linear relationship that you would like to
-            simulate.
-        c : int, float
-            The y intercept of the linear relationship that you would like to
-            simulate.
-
-        Returns
-        -------
-        float
-            The probability that, for the given FIT rate in pence (fit_rate),
-            any given system will be unreported (aka. will not claim subsidy).
-
-        """
-        min_fit = self.fit_rate_instance.min_fit   # pence
-        max_fit = self.fit_rate_instance.max_fit   # pence
-        fit_range = np.abs(max_fit - min_fit)      # pence
-        if fit_rate < min_fit:
-            return 1.
-        elif fit_rate > max_fit:
-            return 0.
-        elif min_fit < fit_rate < max_fit:
-            return (m/fit_range * (fit_rate - min_fit)) + c
-
-    def power_relationship(self, fit_rate, m=-1, c=1, a=2):
-        """
-        A function to calculate the probability that a solar pv
-        system is installed and not reported based on  power of x
-        relationship between the FIT rate and reporting probability.
-        The transformation used is y = -((gradient/range) * (x-min)) ** a + c
-        Where
-            - y is the probability that a pv system is not reported
-            - x is the FIT rate in pence
-            - min is the minimum fit rate
-            - range is the range of the fit rate in pence
-
-        Parameters
-        ----------
-        fit_rate : float
-            The fit_rate in pence for which we want to calculate the probability
-            that a pv system is unreported (e.g. the owner does not claim
-            subsidy).
-        m : int, float
-            The gradient of the power of x relationship that you would like to
-            simulate.
-        c : int, float
-            The y intercept of the power of x relationship that you would
-            like to simulate.
-        a : int
-            The power to use, where `a` is any positive real number.
-
-        Returns
-        -------
-        float
-            The probability that, for the given FIT rate in pence (fit_rate),
-            any given system will be unreported (aka. will not claim subsidy).
-
-        """
-
-        min_fit = self.fit_rate_instance.min_fit    # pence
-        max_fit = self.fit_rate_instance.max_fit    # pence
-        fit_range = np.abs(max_fit - min_fit)       # pence
-
-        if fit_rate < min_fit:
-            return 1
-        elif fit_rate > max_fit:
-            return 0
-        elif min_fit < fit_rate < max_fit:
-            return -(m/fit_range * (fit_rate - min_fit)) ** a + c
-
     def exponential_relationship(self, fit_rate, a=1):
         """
         A function to calculate the probability that a solar pv
-        system is installed and not reported based on an exponential
+        system is installed and unreported based on an exponential
         relationship between the FIT rate and reporting probability.
         The transformation used is y = exp(-((gradient/range) * (x-min)))
         Where
@@ -212,7 +124,6 @@ class InstallRate:
         float
             The probability that, for the given FIT rate in pence (fit_rate),
             any given system will be unreported (aka. will not claim subsidy).
-
         """
 
         # to reduce the probability of unreporting at low FIT rates
@@ -228,6 +139,7 @@ class InstallRate:
         elif min_fit <= fit_rate <= max_fit:
             return math.exp( -a * ((1/fit_range) * (fit_rate - min_fit)))
 
+    @staticmethod
     def plot_unreported_relationships(self, params):
         """
         Plot relationships between the FIT rate and the probability of
@@ -259,6 +171,13 @@ class InstallRate:
         plt.show()
     
     def calculate_unreported(self):
+        """
+        Calculate the number of unreported solar PV systems. Also a wrapper
+        func for calc_unrep.
+        Returns
+        -------
+        None
+        """
         columns = [
             self.cc_cols["0to4"],
             self.cc_cols["4to10"],
@@ -280,6 +199,48 @@ class InstallRate:
         unreported_cc_df.index = pd.DatetimeIndex(unreported_cc_df.index)
         self.results = unreported_cc_df
         return unreported_cc_df
+
+    def calc_unrep(self, col):
+        """
+        A function to calculate the number of unreported systems using a
+        simulated relationship between FIT rate in pence and the probability of
+        a solar pv system being unreported.
+
+        Returns
+        -------
+        col_data : pandas.DataFrame
+            A DataFrame containing the simualted unreported systems.
+        """
+
+        # create DataFrame of subset given by `col`
+        col_data = self.cum_count[[col]]
+        col_data = pd.DataFrame(col_data)
+        col_data.index.rename("Date", inplace=True)
+        col_data.rename({col: "Cumulative Count"}, axis=1, inplace=True)
+
+        # create a column of the monthly count of installed systems
+        col_data["Count"] = col_data.diff()
+        # set first value (.diff() returns nan)
+        col_data.iloc[0, -1] = col_data.iloc[0, -2]
+        col_data.reset_index(inplace=True)
+        # get the FIT rate for each date
+        col_data["FIT"] = col_data["Date"] \
+            .apply(FR_instance.get_fit_rate).astype(float)
+
+        # calculate the probability of unreporting using a
+        # y = exp(-9x) relationship between FIT rate in pence and
+        # the probability of unreporting
+        col_data["exp(-7x)"] = col_data["FIT"] \
+            .apply(self.exponential_relationship, a=9)
+
+        col_data["Count Unreported exp(-9x)"] = \
+            col_data["Count"] * col_data["exp(-9x)"]
+        col_data["Cumulative Count Unreported exp(-9x)"] = \
+            col_data["Count Unreported exp(-9x)"].cumsum()
+
+        col_data.set_index("Date", inplace=True)
+
+        return col_data
 
     def plot_results(self):
 
@@ -343,55 +304,6 @@ class InstallRate:
         plt.ylabel("PV System Count (000's)")
         plt.show()
         fig2.savefig("../graphs/unreported_area_plot.png", dpi=600)
-
-    def calc_unrep(self, col):
-
-        """
-        A function to calculate the number of unreported systems using a
-        simulated relationship between FIT rate in pence and the probability of
-        a solar pv system being unreported.
-
-        Returns
-        -------
-        col_data : pandas.DataFrame
-            A DataFrame containing the simualted unreported systems.
-        """
-
-        # create an instance of the FITRate class
-        FR_instance = FITRate()
-
-        # create DataFrame with the col_data count
-        # for all systems covered by the FIT
-        col_data = self.cum_count[[col]]
-        # import pdb; pdb.set_trace()
-        col_data = pd.DataFrame(col_data)
-        # import pdb; pdb.set_trace()
-        col_data.index.rename("Date", inplace=True)
-        col_data.rename({col : "Cumulative Count"}, axis=1, inplace=True)
-        # import pdb; pdb.set_trace()
-
-        # create a column of the monthly count of installed systems
-        col_data["Count"] = col_data.diff()
-        col_data.iloc[0, -1] = col_data.iloc[0, -2]
-        col_data.reset_index(inplace=True)
-        # get the FIT rate for each row, calculated from the
-        # date using the instance of the FITRate class.
-        col_data["FIT"] = col_data["Date"] \
-            .apply(FR_instance.get_fit_rate).astype(float)
-
-        # calculate the probability of unreporting using a
-        # y = exp(-5x) relationship between FIT rate in pence and
-        # the probability of unreporting
-        col_data["exp(-7x)"] = col_data["FIT"] \
-            .apply(self.exponential_relationship, a=9)
-
-        col_data["Count Unreported exp(-7x)"] = \
-            col_data["Count"] * col_data["exp(-7x)"]
-        col_data["Cumulative Count Unreported exp(-7x)"] = \
-            col_data["Count Unreported exp(-7x)"].cumsum()
-
-        col_data.set_index("Date", inplace=True)
-        return col_data
 
     def save_results(self):
         df = self.results.unstack(level=1)
