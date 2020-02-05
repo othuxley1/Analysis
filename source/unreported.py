@@ -9,10 +9,13 @@ import pandas as pd
 import numpy as np
 import math
 import matplotlib.pyplot as plt
+from matplotlib import rcParams
+rcParams.update({'figure.autolayout': True})
 import seaborn as sns
 plt.style.use('seaborn')
 
 from FIT_rate import FITRate
+
 
 class InstallRate:
 
@@ -26,6 +29,7 @@ class InstallRate:
         self.cum_count = None
         self.cc_cols = None
         self.cum_count_unstacked = None
+        self.results = None
         self.fit_rate_instance = FITRate()
 
     def read_install_csv(self):
@@ -51,7 +55,7 @@ class InstallRate:
         data.rename({"Cumulative Count" : "Install Size"},
                     axis="columns", inplace=True)
 
-        # prepare data_T DataFrame
+        # create data_T DataFrame
         # =========================
         data_T = data.T
         # renaming columns in data_T
@@ -67,6 +71,8 @@ class InstallRate:
         aliases = ["0to4", "4to10", "10to50", "50to5", "5to25", "25+"]
         cols = {alias : header
                 for alias, header in zip(aliases, data_T.columns.tolist())}
+
+        # remove commas from counts aka. 2,500 --> 2500
         for alias in cols.keys():
             data_T[cols[alias]] = data_T[cols[alias]]\
                 .str.replace(",", "").astype(int)
@@ -75,7 +81,7 @@ class InstallRate:
         self.cc_cols = cols
 
         # create unstacked DataFrame
-        # data_T.unstack(level=1).reset_index() # redundant???
+        # ===========================
         unstacked = data_T.unstack().reset_index()
         unstacked.rename(
             { "level_0" : "Install Size",
@@ -235,9 +241,8 @@ class InstallRate:
                 - a list of arguments to pass to the function
                 - the name of the function to use for the plot legend
         """
-
         # create DataFrame with data to plot
-        fit_rates = np.arange(0, 70)
+        fit_rates = np.arange(0, 55, 0.1)
         unreported = {func_name : [func(x, **func_args) for x in fit_rates]
                       for func, func_args, func_name in params}
         unreported["FIT Rate (p)"] = fit_rates
@@ -252,8 +257,95 @@ class InstallRate:
         plt.setp(ax.get_legend().get_title(), fontsize='16') # for legend title
         fig.savefig("../graphs/unreported_fit_relationships.png", dpi=600)
         plt.show()
-
+    
     def calculate_unreported(self):
+        columns = [
+            self.cc_cols["0to4"],
+            self.cc_cols["4to10"],
+            self.cc_cols["10to50"],
+            self.cc_cols["50to5"]
+        ]
+        # calculate the number of unreported systems for
+        # all systems under 5 MW and binned as in the `columns`
+        # variable
+        unreported_dfs = [self.calc_unrep(col) for col in columns]
+        _index = unreported_dfs[0].index
+        # import pdb; pdb.set_trace()
+        unreported_cc_dfs = [
+            df[["Cumulative Count", "Cumulative Count Unreported exp(-7x)"]]
+            for df in unreported_dfs
+        ]
+        unreported_cc_df = pd.concat(unreported_cc_dfs, axis=1,
+                                     keys=columns)
+        unreported_cc_df.index = pd.DatetimeIndex(unreported_cc_df.index)
+        self.results = unreported_cc_df
+        return unreported_cc_df
+
+    def plot_results(self):
+
+        """Plot results of analysis."""
+
+        df = self.results.rename(
+            {"Cumulative Count" : "Reported",
+             "Cumulative Count Unreported exp(-7x)" : "Unreported"},
+            axis=1
+        )
+        df = df /1000
+
+        fig, axes = plt.subplots(2, 2, figsize=[7,7], sharex=True, sharey=False)
+        # fig.subplots_adjust(left=1, right=0.9, bottom=1)
+        ax1, ax2, ax3, ax4 = axes[0,0], axes[0, 1], axes[1, 0], axes[1, 1]
+
+        df[self.cc_cols["0to4"]].plot.area(stacked=True, ax=ax1,
+                                           color=['#55A868', '#4C72B0'])
+        ax1.set_title(self.cc_cols["0to4"], fontsize=12)
+        ax1.legend('')
+        ax1.set_xlabel('')
+        ax1.set_ylabel('')
+
+        df[self.cc_cols["4to10"]].plot.area(stacked=True, ax=ax2,
+                                            color=['#55A868', '#4C72B0'])
+        ax2.set_title(self.cc_cols["4to10"], fontsize=12)
+        ax2.set_xlabel('')
+        ax2.set_ylabel('')
+
+        df[self.cc_cols["10to50"]].plot.area(stacked=True, ax=ax3,
+                                             color=['#55A868', '#4C72B0'])
+        ax3.set_title(self.cc_cols["10to50"], fontsize=12)
+        ax3.set_xlabel('')
+        ax3.set_ylabel('')
+        ax3.legend('')
+        ax3.tick_params(axis="x", labelrotation=90.0)
+
+        df[self.cc_cols["50to5"]].plot.area(stacked=True, ax=ax4,
+                                            color=['#55A868', '#4C72B0'])
+        ax4.set_title(self.cc_cols["50to5"], fontsize=12)
+        ax4.set_xlabel('')
+        ax4.set_ylabel('')
+        ax4.legend('')
+        ax4.tick_params(axis="x", labelrotation=90.0)
+
+        fig.text(0.42, 0.02, 'Date (Y)', ha='center')
+        fig.text(0.02, 0.5, "PV System Count (000's)", va='center',
+                 rotation='vertical')
+        leg = ax2.legend(fontsize='small', loc='center left',
+                         bbox_to_anchor=(1, 0.5))
+        leg.set_title('Data Source', prop={'size':'small'})
+        plt.tight_layout(pad=5)
+        plt.show()
+
+        fig.savefig("../graphs/unreported_grid_area_plot.png", dpi=600)
+
+        fig2 = plt.figure()
+        # sum over all system sizes, for reported and unreported
+        df = df.sum(axis=1, level=1)
+        df.plot.area(stacked=True, color=['#55A868', '#4C72B0'])
+        plt.ylabel("PV System Count (000's)")
+        plt.show()
+        fig2.savefig("../graphs/unreported_area_plot.png", dpi=600)
+
+    def calc_unrep(self, col):
+
         """
         A function to calculate the number of unreported systems using a
         simulated relationship between FIT rate in pence and the probability of
@@ -261,79 +353,62 @@ class InstallRate:
 
         Returns
         -------
-        total : pandas.DataFrame
+        col_data : pandas.DataFrame
             A DataFrame containing the simualted unreported systems.
         """
+
         # create an instance of the FITRate class
         FR_instance = FITRate()
 
-        # create DataFrame with the total count
+        # create DataFrame with the col_data count
         # for all systems covered by the FIT
-        total = self.cum_count[
-            [
-                self.cc_cols["0to4"],
-                self.cc_cols["4to10"],
-                self.cc_cols["10to50"],
-                self.cc_cols["50to5"]
-            ]
-        ].sum(axis=1)
-        total = pd.DataFrame(total, columns=["Cumulative Count"])
-        total.index.rename("Date", inplace=True)
+        col_data = self.cum_count[[col]]
+        # import pdb; pdb.set_trace()
+        col_data = pd.DataFrame(col_data)
+        # import pdb; pdb.set_trace()
+        col_data.index.rename("Date", inplace=True)
+        col_data.rename({col : "Cumulative Count"}, axis=1, inplace=True)
+        # import pdb; pdb.set_trace()
 
         # create a column of the monthly count of installed systems
-        total["Count"] = total.diff()
-        total.iloc[0, -1] = total.iloc[0, -2]
-        total.reset_index(inplace=True)
-
+        col_data["Count"] = col_data.diff()
+        col_data.iloc[0, -1] = col_data.iloc[0, -2]
+        col_data.reset_index(inplace=True)
         # get the FIT rate for each row, calculated from the
         # date using the instance of the FITRate class.
-        import pdb; pdb.set_trace()
-        total["FIT"] = total["Date"]\
+        col_data["FIT"] = col_data["Date"] \
             .apply(FR_instance.get_fit_rate).astype(float)
 
         # calculate the probability of unreporting using a
         # y = exp(-5x) relationship between FIT rate in pence and
         # the probability of unreporting
-        import pdb; pdb.set_trace()
-        total["exp(-5x)"] = total["FIT"]\
-            .apply(self.exponential_relationship, a=5)
+        col_data["exp(-7x)"] = col_data["FIT"] \
+            .apply(self.exponential_relationship, a=9)
 
-        total["Count Unreported exp(-5x)"] = total["Count"] * total["exp(-5x)"]
-        total["Cumulative Count Unreported exp(-5x)"] = \
-            total["Count Unreported exp(-5x)"].cumsum()
+        col_data["Count Unreported exp(-7x)"] = \
+            col_data["Count"] * col_data["exp(-7x)"]
+        col_data["Cumulative Count Unreported exp(-7x)"] = \
+            col_data["Count Unreported exp(-7x)"].cumsum()
 
-        return total
+        col_data.set_index("Date", inplace=True)
+        return col_data
 
-    def plot_graphs(self):
-        """
-        A function to plot a stacked area plot of the cumulative count
-        of all deployed solar pv system from the input data.
-        """
-        fig = plt.figure()
-        df = self.cum_count
-        df.plot.area()
-        plt.show()
+    def save_results(self):
+        df = self.results.unstack(level=1)
+        df = df.reset_index()
+        df = df.rename({"level_0" : "System Size",
+                        "level_1" : "Status",
+                        0 : "Cumulative Count"}, axis=1)
+        df.to_csv("../data/unreported_results.csv")
 
 
 if __name__ == "__main__":
     instance = InstallRate()
     unstacked_, data_T_ = instance.read_install_csv()
     instance.plot_unreported_relationships(
-        (
-            (instance.linear_relationship, {}, "y = x"),
-            (instance.power_relationship, {"a" : 2}, "y = -x^a + 1"),
-            # (instance.exponential_relationship, {"a" : 1}, "y = e^-x"),
-            (instance.exponential_relationship, {"a" : 2}, "y = e^-2x"),
-            (instance.exponential_relationship, {"a" : 3}, "y = e^-3x"),
-            (instance.exponential_relationship, {"a" : 4}, "y = e^-4x"),
-            (instance.exponential_relationship, {"a" : 5}, "y = e^-5x")
-        )
-
+        ((instance.exponential_relationship, {"a" : 7}, "y = e^-7x"),)
     )
-    fig = plt.figure()
-    unr = instance.calculate_unreported()
-    unr[["Cumulative Count", "Cumulative Count Unreported exp(-5x)"]].plot.area()
-
-    fig.savefig("../graphs/unreported_results_area.png", dpi=600)
-    plt.show()
+    instance.calculate_unreported()
+    instance.plot_results()
+    instance.save_results()
 
