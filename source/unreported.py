@@ -98,7 +98,7 @@ class InstallRate:
 
         return unstacked, data_T
 
-    def exponential_relationship(self, fit_rate, a=1):
+    def exponential_relationship(self, fit_rate, alpha, beta, theta):
         """
         A function to calculate the probability that a solar pv
         system is installed and unreported based on an exponential
@@ -128,7 +128,7 @@ class InstallRate:
 
         # to reduce the probability of unreporting at low FIT rates
         # I have subtracted 1 from the min of the fit price
-        min_fit = self.fit_rate_instance.min_fit - 1    # pence
+        min_fit = self.fit_rate_instance.min_fit    # pence
         max_fit = self.fit_rate_instance.max_fit        # pence
         fit_range = np.abs(max_fit - min_fit)           # pence
 
@@ -137,10 +137,10 @@ class InstallRate:
         elif fit_rate > max_fit:
             return 0
         elif min_fit <= fit_rate <= max_fit:
-            return math.exp( -a * ((1/fit_range) * (fit_rate - min_fit)))
+            return (alpha * math.exp(beta * fit_rate) + theta) / 100
 
     @staticmethod
-    def plot_unreported_relationships(self, params):
+    def plot_unreported_relationships(params):
         """
         Plot relationships between the FIT rate and the probability of
         unreporting.
@@ -159,6 +159,7 @@ class InstallRate:
                       for func, func_args, func_name in params}
         unreported["FIT Rate (p)"] = fit_rates
         unrp_df = pd.DataFrame(unreported).set_index("FIT Rate (p)")
+        unrp_df.to_csv("../data/probability_unreported.csv")
 
         # plot graph
         fig = plt.figure()
@@ -189,14 +190,15 @@ class InstallRate:
         # variable
         unreported_dfs = [self.calc_unrep(col) for col in columns]
         _index = unreported_dfs[0].index
-        # import pdb; pdb.set_trace()
         unreported_cc_dfs = [
-            df[["Cumulative Count", "Cumulative Count Unreported exp(-7x)"]]
+            df[["Count", "Cumulative Count", "Count Unreported alpha*exp(-beta*x) + theta",
+                "Cumulative Count Unreported alpha*exp(-beta*x) + theta"]]
             for df in unreported_dfs
         ]
         unreported_cc_df = pd.concat(unreported_cc_dfs, axis=1,
                                      keys=columns)
         unreported_cc_df.index = pd.DatetimeIndex(unreported_cc_df.index)
+
         self.results = unreported_cc_df
         return unreported_cc_df
 
@@ -225,22 +227,35 @@ class InstallRate:
         col_data.reset_index(inplace=True)
         # get the FIT rate for each date
         col_data["FIT"] = col_data["Date"] \
-            .apply(FR_instance.get_fit_rate).astype(float)
+            .apply(FITRate().get_fit_rate).astype(float)
 
         # calculate the probability of unreporting using a
-        # y = exp(-9x) relationship between FIT rate in pence and
+        # y = alpha*exp(-beta*x) + theta relationship between FIT rate in pence and
         # the probability of unreporting
-        col_data["exp(-7x)"] = col_data["FIT"] \
-            .apply(self.exponential_relationship, a=9)
+        col_data["alpha*exp(-beta*x) + theta"] = col_data["FIT"] \
+            .apply(self.exponential_relationship, alpha=90, beta=-0.5, theta=10)
 
-        col_data["Count Unreported exp(-9x)"] = \
-            col_data["Count"] * col_data["exp(-9x)"]
-        col_data["Cumulative Count Unreported exp(-9x)"] = \
-            col_data["Count Unreported exp(-9x)"].cumsum()
+        col_data["Count Unreported alpha*exp(-beta*x) + theta"] = \
+            col_data["Count"] * col_data["alpha*exp(-beta*x) + theta"] * self.scaling_factor(col)
+        col_data["Cumulative Count Unreported alpha*exp(-beta*x) + theta"] = \
+            col_data["Count Unreported alpha*exp(-beta*x) + theta"].cumsum()
 
         col_data.set_index("Date", inplace=True)
 
         return col_data
+
+
+    def scaling_factor(self, col):
+        if col in set([self.cc_cols["0to4"], self.cc_cols["4to10"]]):
+            return 0.5
+        elif col == self.cc_cols["10to50"]:
+            return 0.5 * 0.5
+        elif col == self.cc_cols["50to5"]:
+            return 0.5 * 0.1
+        else:
+            print(col)
+            raise ValueError("Problem with col variable...")
+
 
     def plot_results(self):
 
@@ -306,7 +321,9 @@ class InstallRate:
         fig2.savefig("../graphs/unreported_area_plot.png", dpi=600)
 
     def save_results(self):
+        # import pdb; pdb.set_trace()
         df = self.results.unstack(level=1)
+        # import pdb; pdb.set_trace()
         df = df.reset_index()
         df = df.rename({"level_0" : "System Size",
                         "level_1" : "Status",
@@ -318,7 +335,7 @@ if __name__ == "__main__":
     instance = InstallRate()
     unstacked_, data_T_ = instance.read_install_csv()
     instance.plot_unreported_relationships(
-        ((instance.exponential_relationship, {"a" : 7}, "y = e^-7x"),)
+        ((instance.exponential_relationship, {"alpha" : 90, "beta": -0.5, "theta": 10}, "y = e^-7x"),)
     )
     instance.calculate_unreported()
     instance.plot_results()
