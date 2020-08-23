@@ -191,10 +191,11 @@ class FITRate:
     def get_fit_rate(self, _date):
         if self.data[self.data["Tariff End Date"] >= _date].empty:
             return 0
+        elif _date < "2010-04-01":
+            return 0
         else:
-            return self.data[self.data["Tariff End Date"] >= _date].iloc[0, -1]
-            cap_date = cap[cap["Tariff End Date"] >= _date][["Tariff",
-                                                             "Tariff End Date"]]
+            cap_date = self.data[self.data["Tariff End Date"] >= _date][["Tariff",
+                                                                         "Tariff End Date"]]
             tariff = cap_date.sort_values("Tariff End Date").iloc[0,0]
             return tariff
 
@@ -207,4 +208,4 @@ if __name__ == "__main__":
 
 
     fit_rate_instance = FITRate()
-    data = fit_rate_instance.data
+    data = fit_rate_instance.get_fit_rate("2016-01-01")
