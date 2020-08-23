@@ -25,7 +25,7 @@ class MonteCarloSiteList:
                 "N must match the number of random_seeds"
         self.clock_seeds = []
         self.national_capacity = []
-        self.out_file = "../data/results_from_seed_new_function_v2_{}N.csv".format(self.N)
+        self.out_file = "../data/MC_results_v2_T0only_20200430_{}N.csv".format(self.N)
 
     @staticmethod
     def grouper(iterable, n, fillvalue=None):
@@ -44,7 +44,7 @@ class MonteCarloSiteList:
         tstart = TIME.time()
         print("Executing Monte Carlo simulation...")
         # TODO
-        # self.clock_seeds variable needs a better name
+        #  self.clock_seeds variable needs a better name
         count = 0
         for sim in range(self.N):
             seed = int(TIME.time()) if self.random_seeds is None else self.random_seeds[sim]
@@ -77,18 +77,12 @@ class MonteCarloSiteList:
         """
         # TODO
         #  fix sim parameter in SiteListVariation - not acting as intended here
-        domestic = SiteListVariation(index, verbose=False,
-                                     system_type="domestic",
-                                     seed=seed)
-        non_domestic = SiteListVariation(index, verbose=False,
-                                         system_type="non-domestic",
-                                         seed=seed)
-        domestic.run()
-        non_domestic.run()
-        sl = pd.concat((domestic.new_SL, non_domestic.new_SL))
+        sl_rvs = SiteListVariation(index, verbose=False, seed=seed, test=False)
+        sl_rvs.unreported_systems()
+        sl_rvs.simulate_effective_capacity_site_list()
+        sl = sl_rvs.SL.copy()
         self.sim_stats(sl)
-        del domestic
-        del non_domestic
+        del sl_rvs
         return sl
 
     def sim_stats(self, sl):
@@ -105,7 +99,7 @@ class MonteCarloSiteList:
 
         """
         # import pdb; pdb.set_trace()
-        national_capacity = sl.loc[sl.loc[:, "decommissioned"] == 0].Capacity.sum()
+        national_capacity = sl.Capacity.sum()
         print(national_capacity)
         self.national_capacity.append(national_capacity)
 
@@ -143,5 +137,5 @@ class MonteCarloSiteList:
         return seeds
 
 input_seeds_file = "../data/results_10N.csv"
-MC_instance = MonteCarloSiteList(sd_file=input_seeds_file, N=100, n=1)
+MC_instance = MonteCarloSiteList(N=1000, n=1)
 MC_instance.run()
